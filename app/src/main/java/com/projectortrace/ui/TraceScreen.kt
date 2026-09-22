@@ -16,7 +16,7 @@ import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
-import android.media.ExifInterface
+import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
@@ -101,6 +101,16 @@ import com.projectortrace.model.TraceMode
 import com.projectortrace.model.TracingPreset
 import com.projectortrace.model.TransformState
 import com.projectortrace.R
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import com.projectortrace.imaging.calculateSampleSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -148,7 +158,7 @@ private const val MinPaletteScale = 0.55f
 private const val MaxPaletteScale = 1.85f
 private const val PaletteScaleStep = 0.05f
 private const val MaxMenuOffsetPx = 900f
-private const val MaxDecodedImageDimensionPx = 4096
+private const val MaxDecodedImageDimensionPx = 3072
 private const val MaxLineArtDimensionPx = 1600
 private const val MaxEdgeOutlineDimensionPx = 1500
 private const val MaxClarityDimensionPx = 1400
@@ -344,7 +354,7 @@ fun TraceScreen(
 ) {
     val context = LocalContext.current
     var transform by remember { mutableStateOf(context.loadTransformState().copy(currentMode = TraceMode.Move)) }
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedImageUri by remember { mutableStateOf(context.loadLastImageUri()) }
     var selectedOverlayUri by remember { mutableStateOf(context.loadLastOverlayUri()) }
     var selectedFolderUri by remember { mutableStateOf(context.loadLastFolderUri()) }
     var isLaunchSplashVisible by remember { mutableStateOf(true) }
@@ -382,15 +392,13 @@ fun TraceScreen(
     fun chooseImage(
         uri: Uri,
         persistPermission: Boolean = true,
-        rememberForRestart: Boolean = true,
     ) {
         val persistedPermission = if (persistPermission) {
             context.persistReadPermission(uri)
         } else {
             false
         }
-        shouldRememberSelectedImage = rememberForRestart ||
-            persistedPermission ||
+        shouldRememberSelectedImage = persistedPermission ||
             context.canRestoreImageUri(uri)
         imageNotice = null
         selectedImageUri = uri
@@ -409,7 +417,7 @@ fun TraceScreen(
     }
 
     LaunchedEffect(Unit) {
-        delay(3_000L)
+        delay(350L)
         isLaunchSplashVisible = false
         isOverlayVisible = true
         refocusTraceScreen()
@@ -437,7 +445,7 @@ fun TraceScreen(
         contract = ActivityResultContracts.GetContent(),
     ) { uri ->
         if (uri != null) {
-            chooseImage(uri, rememberForRestart = false)
+            chooseImage(uri)
         }
     }
     val fileBrowserLauncher = rememberLauncherForActivityResult(
@@ -599,9 +607,43 @@ fun TraceScreen(
         return true
     }
 
+    // Coalesce remote key repeats; persist the latest state when leaving the app.
+    val latestTransform by rememberUpdatedState(transform)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) context.saveTransformState(latestTransform)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            context.saveTransformState(latestTransform)
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     LaunchedEffect(transform) {
+        delay(250L)
         context.saveTransformState(transform)
     }
+
+    fun navigateBack() {
+        when {
+            isImageLibraryVisible -> isImageLibraryVisible = false
+            isModePickerVisible -> isModePickerVisible = false
+            isProjectionBlanked -> isProjectionBlanked = false
+            isDirectControlActive -> {
+                isDirectControlActive = false
+                isOverlayVisible = true
+            }
+            isOverlayVisible && menuPanelHistory.isNotEmpty() -> {
+                menuPanel = menuPanelHistory.last()
+                menuPanelHistory = menuPanelHistory.dropLast(1)
+                menuSelectedIndex = 0
+            }
+            isOverlayVisible -> isOverlayVisible = false
+            else -> (context as? Activity)?.finish()
+        }
+    }
+    BackHandler { navigateBack() }
 
     LaunchedEffect(menuSize) {
         context.saveMenuSize(menuSize)
@@ -654,6 +696,7 @@ fun TraceScreen(
         when {
             selectedImageUri == null -> context.clearLastImageUri()
             shouldRememberSelectedImage -> context.saveLastImageUri(selectedImageUri!!)
+            else -> context.clearLastImageUri()
         }
         refocusTraceScreen()
     }
@@ -665,7 +708,7 @@ fun TraceScreen(
 
     LaunchedEffect(externalImageUri) {
         externalImageUri?.let { uri ->
-            chooseImage(uri, rememberForRestart = false)
+            chooseImage(uri)
             onExternalImageConsumed()
         }
     }
@@ -735,6 +778,12 @@ fun TraceScreen(
             .fillMaxSize()
             .background(Color(0xFF050608))
             .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK) {
+                    if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_UP && !keyEvent.nativeKeyEvent.isCanceled) {
+                        navigateBack()
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (isLaunchSplashVisible) {
                     return@onPreviewKeyEvent true
                 }
@@ -1525,7 +1574,7 @@ private fun LaunchSplash(
                 modifier = Modifier.padding(top = 6.dp),
             )
             Text(
-                text = "by S.Yemelin  |  V8.5",
+                text = "by S.Yemelin  |  V${com.projectortrace.BuildConfig.VERSION_NAME}",
                 color = Color(0xFF6B7280),
                 fontSize = if (isCompact) 12.sp else 14.sp,
                 fontWeight = FontWeight.Light,
@@ -1876,286 +1925,251 @@ private fun SelectedImage(
     ) {
         val targetWidthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
         val targetHeightPx = with(density) { maxHeight.roundToPx() }.coerceAtLeast(1)
-        val imageLoadResult by produceState<ImageLoadResult>(
-            initialValue = ImageLoadResult.Loading,
-            key1 = uri,
-            key2 = targetWidthPx,
-            key3 = targetHeightPx,
-        ) {
-            value = ImageLoadResult.Loading
-            val loadedBitmap = uri?.let {
-                loadScaledBitmap(
-                    context = context,
-                    uri = it,
-                    targetWidthPx = targetWidthPx,
-                    targetHeightPx = targetHeightPx,
-                )
-            }
-            value = if (loadedBitmap != null) {
-                ImageLoadResult.Loaded(loadedBitmap)
-            } else {
-                ImageLoadResult.Failed
-            }
-        }
-        val bitmap = (imageLoadResult as? ImageLoadResult.Loaded)?.bitmap
-        val overlayBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = overlayUri,
-            key2 = targetWidthPx,
-            key3 = targetHeightPx,
-        ) {
-            val loadedBitmap = overlayUri?.let {
-                loadScaledBitmap(
-                    context = context,
-                    uri = it,
-                    targetWidthPx = targetWidthPx,
-                    targetHeightPx = targetHeightPx,
-                )
-            }
-            value = loadedBitmap
-        }
-
-        LaunchedEffect(imageLoadResult) {
-            if (imageLoadResult == ImageLoadResult.Failed) {
-                onImageLoadFailed()
-            }
-        }
-
-        val lineArtBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = bitmap,
-            key2 = transform.lineArt > 0f,
-        ) {
-            value = if (bitmap != null && transform.lineArt > 0f) {
-                createLineArtBitmap(bitmap)
-            } else {
-                null
-            }
-        }
-        val edgeOutlineBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = bitmap,
-            key2 = EdgeOutlineRenderKey(
-                strength = transform.edgeOutlineStrength,
-                thickness = transform.edgeOutlineThickness,
-                detail = transform.edgeOutlineDetail,
-                smoothing = transform.edgeOutlineSmoothing,
-            ),
-        ) {
-            value = if (bitmap != null && transform.edgeOutlineStrength > 0f) {
-                createEdgeOutlineBitmap(
-                    bitmap = bitmap,
-                    thickness = transform.edgeOutlineThickness,
-                    detail = transform.edgeOutlineDetail,
-                    smoothing = transform.edgeOutlineSmoothing,
-                )
-            } else {
-                null
-            }
-        }
-        val magicOutlineBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = bitmap,
-            key2 = MagicOutlineRenderKey(
-                strength = transform.magicOutlineStrength,
-                detail = transform.magicOutlineDetail,
-                thickness = transform.magicOutlineThickness,
-                compareStep = blinkCompareStep,
-            ),
-        ) {
-            value = if (
-                bitmap != null &&
-                (transform.magicOutlineStrength > 0f || blinkCompareStep == BlinkCompareStep.Outline)
+        key(uri, targetWidthPx, targetHeightPx) {
+            val imageLoadResult by produceState<ImageLoadResult>(
+                initialValue = ImageLoadResult.Loading,
+                key1 = uri,
+                key2 = targetWidthPx,
+                key3 = targetHeightPx,
             ) {
-                createMagicOutlineBitmap(
-                    bitmap = bitmap,
-                    detail = if (blinkCompareStep == BlinkCompareStep.Outline) 0.68f else transform.magicOutlineDetail,
-                    thickness = if (blinkCompareStep == BlinkCompareStep.Outline) 0.42f else transform.magicOutlineThickness,
-                )
-            } else {
-                null
-            }
-        }
-        val clarityBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = bitmap,
-            key2 = transform.clarity > 0f,
-        ) {
-            value = if (bitmap != null && transform.clarity > 0f) {
-                createClarityBitmap(bitmap)
-            } else {
-                null
-            }
-        }
-        val thresholdBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = bitmap,
-            key2 = ThresholdRenderKey(
-                isEnabled = transform.isThresholdEnabled,
-                threshold = transform.threshold,
-                channelMixer = transform.channelMixer,
-            ),
-        ) {
-            value = if (bitmap != null && transform.isThresholdEnabled) {
-                createThresholdBitmap(
-                    bitmap = bitmap,
-                    threshold = transform.threshold,
-                    channelMixer = transform.channelMixer,
-                )
-            } else {
-                null
-            }
-        }
-        val paintBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = bitmap,
-            key2 = PaintRenderKey(
-                isThresholdEnabled = transform.isThresholdEnabled,
-                detail = transform.paintDetail,
-            ),
-        ) {
-            value = if (bitmap != null && !transform.isThresholdEnabled && transform.paintDetail > 0f) {
-                createPaintBitmap(
-                    bitmap = bitmap,
-                    detail = transform.paintDetail,
-                )
-            } else {
-                null
-            }
-        }
-        val posterizeBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = bitmap,
-            key2 = PosterizeRenderKey(
-                isThresholdEnabled = transform.isThresholdEnabled,
-                paintDetail = transform.paintDetail,
-                volume = transform.volume,
-                strength = transform.posterize,
-            ),
-        ) {
-            value = if (
-                bitmap != null &&
-                !transform.isThresholdEnabled &&
-                transform.paintDetail <= 0f &&
-                transform.volume <= 0f &&
-                transform.posterize > 0f
-            ) {
-                createPosterizeBitmap(
-                    bitmap = bitmap,
-                    strength = transform.posterize,
-                )
-            } else {
-                null
-            }
-        }
-        val volumeBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = bitmap,
-            key2 = VolumeRenderKey(
-                isThresholdEnabled = transform.isThresholdEnabled,
-                paintDetail = transform.paintDetail,
-                strength = transform.volume,
-            ),
-        ) {
-            value = if (
-                bitmap != null &&
-                !transform.isThresholdEnabled &&
-                transform.paintDetail <= 0f &&
-                transform.volume > 0f
-            ) {
-                createVolumeBitmap(
-                    bitmap = bitmap,
-                    strength = transform.volume,
-                )
-            } else {
-                null
-            }
-        }
-        val noiseReductionBitmap by produceState<Bitmap?>(
-            initialValue = null,
-            key1 = bitmap,
-            key2 = NoiseReductionRenderKey(
-                isThresholdEnabled = transform.isThresholdEnabled,
-                paintDetail = transform.paintDetail,
-                volume = transform.volume,
-                posterize = transform.posterize,
-                strength = transform.noiseReduction,
-            ),
-        ) {
-            value = if (
-                bitmap != null &&
-                !transform.isThresholdEnabled &&
-                transform.paintDetail <= 0f &&
-                transform.volume <= 0f &&
-                transform.posterize <= 0f &&
-                transform.noiseReduction > 0f
-            ) {
-                createNoiseReductionBitmap(
-                    bitmap = bitmap,
-                    strength = transform.noiseReduction,
-                )
-            } else {
-                null
-            }
-        }
-        val paletteColors by produceState<List<Int>>(
-            initialValue = emptyList(),
-            key1 = bitmap,
-            key2 = transform.colorPaletteCount,
-            key3 = transform.colorPaletteMode,
-        ) {
-            value = if (bitmap != null && transform.colorPaletteCount > 0) {
-                extractColorPalette(
-                    bitmap = bitmap,
-                    colorCount = transform.colorPaletteCount,
-                    mode = transform.colorPaletteMode,
-                )
-            } else {
-                emptyList()
-            }
-        }
-        if (imageLoadResult == ImageLoadResult.Loading) {
-            ImageLoadingIndicator(modifier = Modifier.align(Alignment.Center))
-        }
-
-        if (bitmap != null) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = transform.scale * if (transform.isFlippedHorizontal) -1f else 1f
-                        scaleY = transform.scale * if (transform.isFlippedVertical) -1f else 1f
-                        translationX = transform.offsetX
-                        translationY = transform.offsetY
-                        rotationZ = transform.rotationDegrees
-                        alpha = transform.opacity
-                    },
-            ) {
-                drawDistortedBitmap(
-                    bitmap = bitmap,
-                    transform = transform,
-                    blinkCompareStep = blinkCompareStep,
-                    thresholdBitmap = thresholdBitmap,
-                    paintBitmap = paintBitmap,
-                    volumeBitmap = volumeBitmap,
-                    posterizeBitmap = posterizeBitmap,
-                    noiseReductionBitmap = noiseReductionBitmap,
-                    clarityBitmap = clarityBitmap,
-                    lineArtBitmap = lineArtBitmap,
-                    magicOutlineBitmap = magicOutlineBitmap,
-                    edgeOutlineBitmap = edgeOutlineBitmap,
-                    overlayBitmap = overlayBitmap,
-                )
-
-                if (showGuides) {
-                    drawDistortGuides(
-                        bitmapSize = IntSize(bitmap.width, bitmap.height),
-                        transform = transform,
+                value = ImageLoadResult.Loading
+                val loadedBitmap = uri?.let {
+                    loadScaledBitmap(
+                        context = context,
+                        uri = it,
+                        targetWidthPx = targetWidthPx,
+                        targetHeightPx = targetHeightPx,
                     )
+                }
+                value = if (loadedBitmap != null) {
+                    ImageLoadResult.Loaded(loadedBitmap)
+                } else {
+                    ImageLoadResult.Failed
+                }
+            }
+            val bitmap = (imageLoadResult as? ImageLoadResult.Loaded)?.bitmap
+            val overlayBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = overlayUri,
+                key2 = targetWidthPx,
+                key3 = targetHeightPx,
+            ) {
+                value = null
+                val loadedBitmap = overlayUri?.let {
+                    loadScaledBitmap(
+                        context = context,
+                        uri = it,
+                        targetWidthPx = targetWidthPx,
+                        targetHeightPx = targetHeightPx,
+                    )
+                }
+                value = loadedBitmap
+            }
+
+            LaunchedEffect(imageLoadResult) {
+                if (imageLoadResult == ImageLoadResult.Failed) {
+                    onImageLoadFailed()
                 }
             }
 
-            if (transform.hasAttachedCanvasGuides()) {
+            val lineArtBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = bitmap,
+                key2 = transform.lineArt > 0f,
+            ) {
+                value = if (bitmap != null && transform.lineArt > 0f) {
+                    createLineArtBitmap(bitmap)
+                } else {
+                    null
+                }
+            }
+            val edgeOutlineBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = bitmap,
+                key2 = EdgeOutlineRenderKey(
+                    strength = if (transform.edgeOutlineStrength > 0f) 1f else 0f,
+                    thickness = transform.edgeOutlineThickness,
+                    detail = transform.edgeOutlineDetail,
+                    smoothing = transform.edgeOutlineSmoothing,
+                ),
+            ) {
+                value = if (bitmap != null && transform.edgeOutlineStrength > 0f) {
+                    createEdgeOutlineBitmap(
+                        bitmap = bitmap,
+                        thickness = transform.edgeOutlineThickness,
+                        detail = transform.edgeOutlineDetail,
+                        smoothing = transform.edgeOutlineSmoothing,
+                    )
+                } else {
+                    null
+                }
+            }
+            val magicOutlineBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = bitmap,
+                key2 = MagicOutlineRenderKey(
+                    strength = if (transform.magicOutlineStrength > 0f) 1f else 0f,
+                    detail = transform.magicOutlineDetail,
+                    thickness = transform.magicOutlineThickness,
+                    compareStep = blinkCompareStep,
+                ),
+            ) {
+                value = if (
+                    bitmap != null &&
+                    (transform.magicOutlineStrength > 0f || blinkCompareStep == BlinkCompareStep.Outline)
+                ) {
+                    createMagicOutlineBitmap(
+                        bitmap = bitmap,
+                        detail = if (blinkCompareStep == BlinkCompareStep.Outline) 0.68f else transform.magicOutlineDetail,
+                        thickness = if (blinkCompareStep == BlinkCompareStep.Outline) 0.42f else transform.magicOutlineThickness,
+                    )
+                } else {
+                    null
+                }
+            }
+            val clarityBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = bitmap,
+                key2 = transform.clarity > 0f,
+            ) {
+                value = if (bitmap != null && transform.clarity > 0f) {
+                    createClarityBitmap(bitmap)
+                } else {
+                    null
+                }
+            }
+            val thresholdBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = bitmap,
+                key2 = ThresholdRenderKey(
+                    isEnabled = transform.isThresholdEnabled,
+                    threshold = transform.threshold,
+                    channelMixer = transform.channelMixer,
+                ),
+            ) {
+                value = if (bitmap != null && transform.isThresholdEnabled) {
+                    createThresholdBitmap(
+                        bitmap = bitmap,
+                        threshold = transform.threshold,
+                        channelMixer = transform.channelMixer,
+                    )
+                } else {
+                    null
+                }
+            }
+            val paintBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = bitmap,
+                key2 = PaintRenderKey(
+                    isThresholdEnabled = transform.isThresholdEnabled,
+                    detail = transform.paintDetail,
+                ),
+            ) {
+                value = if (bitmap != null && !transform.isThresholdEnabled && transform.paintDetail > 0f) {
+                    createPaintBitmap(
+                        bitmap = bitmap,
+                        detail = transform.paintDetail,
+                    )
+                } else {
+                    null
+                }
+            }
+            val posterizeBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = bitmap,
+                key2 = PosterizeRenderKey(
+                    isThresholdEnabled = transform.isThresholdEnabled,
+                    paintDetail = transform.paintDetail,
+                    volume = transform.volume,
+                    strength = transform.posterize,
+                ),
+            ) {
+                value = if (
+                    bitmap != null &&
+                    !transform.isThresholdEnabled &&
+                    transform.paintDetail <= 0f &&
+                    transform.volume <= 0f &&
+                    transform.posterize > 0f
+                ) {
+                    createPosterizeBitmap(
+                        bitmap = bitmap,
+                        strength = transform.posterize,
+                    )
+                } else {
+                    null
+                }
+            }
+            val volumeBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = bitmap,
+                key2 = VolumeRenderKey(
+                    isThresholdEnabled = transform.isThresholdEnabled,
+                    paintDetail = transform.paintDetail,
+                    strength = transform.volume,
+                ),
+            ) {
+                value = if (
+                    bitmap != null &&
+                    !transform.isThresholdEnabled &&
+                    transform.paintDetail <= 0f &&
+                    transform.volume > 0f
+                ) {
+                    createVolumeBitmap(
+                        bitmap = bitmap,
+                        strength = transform.volume,
+                    )
+                } else {
+                    null
+                }
+            }
+            val noiseReductionBitmap by produceState<Bitmap?>(
+                initialValue = null,
+                key1 = bitmap,
+                key2 = NoiseReductionRenderKey(
+                    isThresholdEnabled = transform.isThresholdEnabled,
+                    paintDetail = transform.paintDetail,
+                    volume = transform.volume,
+                    posterize = transform.posterize,
+                    strength = transform.noiseReduction,
+                ),
+            ) {
+                value = if (
+                    bitmap != null &&
+                    !transform.isThresholdEnabled &&
+                    transform.paintDetail <= 0f &&
+                    transform.volume <= 0f &&
+                    transform.posterize <= 0f &&
+                    transform.noiseReduction > 0f
+                ) {
+                    createNoiseReductionBitmap(
+                        bitmap = bitmap,
+                        strength = transform.noiseReduction,
+                    )
+                } else {
+                    null
+                }
+            }
+            val paletteColors by produceState<List<Int>>(
+                initialValue = emptyList(),
+                key1 = bitmap,
+                key2 = transform.colorPaletteCount,
+                key3 = transform.colorPaletteMode,
+            ) {
+                value = if (bitmap != null && transform.colorPaletteCount > 0) {
+                    extractColorPalette(
+                        bitmap = bitmap,
+                        colorCount = transform.colorPaletteCount,
+                        mode = transform.colorPaletteMode,
+                    )
+                } else {
+                    emptyList()
+                }
+            }
+            if (imageLoadResult == ImageLoadResult.Loading) {
+                ImageLoadingIndicator(modifier = Modifier.align(Alignment.Center))
+            }
+
+            if (bitmap != null) {
                 Canvas(
                     modifier = Modifier
                         .fillMaxSize()
@@ -2165,31 +2179,69 @@ private fun SelectedImage(
                             translationX = transform.offsetX
                             translationY = transform.offsetY
                             rotationZ = transform.rotationDegrees
+                            alpha = transform.opacity
                         },
                 ) {
-                    drawAttachedCanvasGuides(
-                        bitmapSize = IntSize(bitmap.width, bitmap.height),
+                    drawDistortedBitmap(
+                        bitmap = bitmap,
                         transform = transform,
+                        blinkCompareStep = blinkCompareStep,
+                        thresholdBitmap = thresholdBitmap,
+                        paintBitmap = paintBitmap,
+                        volumeBitmap = volumeBitmap,
+                        posterizeBitmap = posterizeBitmap,
+                        noiseReductionBitmap = noiseReductionBitmap,
+                        clarityBitmap = clarityBitmap,
+                        lineArtBitmap = lineArtBitmap,
+                        magicOutlineBitmap = magicOutlineBitmap,
+                        edgeOutlineBitmap = edgeOutlineBitmap,
+                        overlayBitmap = overlayBitmap,
+                    )
+
+                    if (showGuides) {
+                        drawDistortGuides(
+                            bitmapSize = IntSize(bitmap.width, bitmap.height),
+                            transform = transform,
+                        )
+                    }
+                }
+
+                if (transform.hasAttachedCanvasGuides()) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = transform.scale * if (transform.isFlippedHorizontal) -1f else 1f
+                                scaleY = transform.scale * if (transform.isFlippedVertical) -1f else 1f
+                                translationX = transform.offsetX
+                                translationY = transform.offsetY
+                                rotationZ = transform.rotationDegrees
+                            },
+                    ) {
+                        drawAttachedCanvasGuides(
+                            bitmapSize = IntSize(bitmap.width, bitmap.height),
+                            transform = transform,
+                        )
+                    }
+                }
+
+                if (paletteColors.isNotEmpty()) {
+                    ColorPaletteOverlay(
+                        colors = paletteColors,
+                        colorCount = transform.colorPaletteCount,
+                        mode = transform.colorPaletteMode,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(24.dp)
+                            .graphicsLayer {
+                                translationX = transform.colorPaletteOffsetX
+                                translationY = transform.colorPaletteOffsetY
+                                scaleX = transform.colorPaletteScale.coerceIn(MinPaletteScale, MaxPaletteScale)
+                                scaleY = transform.colorPaletteScale.coerceIn(MinPaletteScale, MaxPaletteScale)
+                                transformOrigin = TransformOrigin(1f, 1f)
+                            },
                     )
                 }
-            }
-
-            if (paletteColors.isNotEmpty()) {
-                ColorPaletteOverlay(
-                    colors = paletteColors,
-                    colorCount = transform.colorPaletteCount,
-                    mode = transform.colorPaletteMode,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(24.dp)
-                        .graphicsLayer {
-                            translationX = transform.colorPaletteOffsetX
-                            translationY = transform.colorPaletteOffsetY
-                            scaleX = transform.colorPaletteScale.coerceIn(MinPaletteScale, MaxPaletteScale)
-                            scaleY = transform.colorPaletteScale.coerceIn(MinPaletteScale, MaxPaletteScale)
-                            transformOrigin = TransformOrigin(1f, 1f)
-                        },
-                )
             }
         }
     }
@@ -2753,17 +2805,17 @@ private fun handleOkKey(
 private fun TraceMode.indexInPicker(): Int =
     ModePickerModes.indexOf(this).takeIf { it >= 0 } ?: 0
 
-private fun TransformState.updateForDirection(
+internal fun TransformState.updateForDirection(
     keyCode: Int,
 ): TransformState {
     if (isLocked && currentMode != TraceMode.Lock) return this
 
     return when (currentMode) {
         TraceMode.Move -> when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> copy(offsetX = offsetX - moveStepPx())
-            KeyEvent.KEYCODE_DPAD_RIGHT -> copy(offsetX = offsetX + moveStepPx())
-            KeyEvent.KEYCODE_DPAD_UP -> copy(offsetY = offsetY - moveStepPx())
-            KeyEvent.KEYCODE_DPAD_DOWN -> copy(offsetY = offsetY + moveStepPx())
+            KeyEvent.KEYCODE_DPAD_LEFT -> copy(offsetX = (offsetX - moveStepPx()).coerceIn(-MaxSavedOffsetPx, MaxSavedOffsetPx))
+            KeyEvent.KEYCODE_DPAD_RIGHT -> copy(offsetX = (offsetX + moveStepPx()).coerceIn(-MaxSavedOffsetPx, MaxSavedOffsetPx))
+            KeyEvent.KEYCODE_DPAD_UP -> copy(offsetY = (offsetY - moveStepPx()).coerceIn(-MaxSavedOffsetPx, MaxSavedOffsetPx))
+            KeyEvent.KEYCODE_DPAD_DOWN -> copy(offsetY = (offsetY + moveStepPx()).coerceIn(-MaxSavedOffsetPx, MaxSavedOffsetPx))
             else -> this
         }
 
@@ -2774,8 +2826,8 @@ private fun TransformState.updateForDirection(
         }
 
         TraceMode.Rotate -> when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> copy(rotationDegrees = rotationDegrees - rotationStepDegrees())
-            KeyEvent.KEYCODE_DPAD_RIGHT -> copy(rotationDegrees = rotationDegrees + rotationStepDegrees())
+            KeyEvent.KEYCODE_DPAD_LEFT -> copy(rotationDegrees = (rotationDegrees - rotationStepDegrees()) % 360f)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> copy(rotationDegrees = (rotationDegrees + rotationStepDegrees()) % 360f)
             else -> this
         }
 
@@ -4200,13 +4252,20 @@ private fun DrawScope.drawDistortedBitmap(
             BlinkCompareStep.Original,
             BlinkCompareStep.Outline,
             BlinkCompareStep.BlackWhite -> bitmap
-            BlinkCompareStep.Filtered -> thresholdBitmap ?: paintBitmap ?: volumeBitmap ?: posterizeBitmap ?: noiseReductionBitmap ?: bitmap
+            BlinkCompareStep.Filtered -> when {
+                transform.isThresholdEnabled -> thresholdBitmap ?: bitmap
+                transform.paintDetail > 0f -> paintBitmap ?: bitmap
+                transform.volume > 0f -> volumeBitmap ?: bitmap
+                transform.posterize > 0f -> posterizeBitmap ?: bitmap
+                transform.noiseReduction > 0f -> noiseReductionBitmap ?: bitmap
+                else -> bitmap
+            }
         }
         val basePaint = when (blinkCompareStep) {
             BlinkCompareStep.BlackWhite -> blackWhitePaint()
             BlinkCompareStep.Original,
             BlinkCompareStep.Outline -> bitmapPaintForFilters(TransformState(), false)
-            BlinkCompareStep.Filtered -> bitmapPaintForFilters(transform, thresholdBitmap != null)
+            BlinkCompareStep.Filtered -> bitmapPaintForFilters(transform, transform.isThresholdEnabled && thresholdBitmap != null)
         }
         val nativeCanvas = canvas.nativeCanvas
         val clipPath = cropPathFor(
@@ -4851,6 +4910,13 @@ private fun overlayPaint(transform: TransformState): Paint =
                 OverlayBlendMode.Screen -> BlendMode.SCREEN
                 OverlayBlendMode.Overlay -> BlendMode.OVERLAY
             }
+        } else {
+            xfermode = when (transform.overlayBlendMode) {
+                OverlayBlendMode.Normal -> null
+                OverlayBlendMode.Multiply -> android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.MULTIPLY)
+                OverlayBlendMode.Screen -> android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SCREEN)
+                OverlayBlendMode.Overlay -> android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.OVERLAY)
+            }
         }
     }
 
@@ -5285,6 +5351,13 @@ private fun Context.releaseReadPermission(uri: Uri) {
 
 private fun Context.canRestoreImageUri(uri: Uri): Boolean {
     if (hasPersistedReadPermission(uri)) return true
+    if (DocumentsContract.isDocumentUri(this, uri)) {
+        val treeId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+        if (treeId != null && contentResolver.persistedUriPermissions.any { grant ->
+                grant.isReadPermission && grant.uri.authority == uri.authority &&
+                    runCatching { DocumentsContract.getTreeDocumentId(grant.uri) }.getOrNull() == treeId
+            }) return true
+    }
     if (uri.scheme == ContentResolver.SCHEME_FILE) return true
 
     return uri.scheme == ContentResolver.SCHEME_CONTENT &&
@@ -5416,7 +5489,7 @@ private suspend fun loadImageLibrary(
 }
 
 private suspend fun loadMediaImageLibrary(context: Context): List<MediaImageItem> = withContext(Dispatchers.IO) {
-    runCatching {
+    cancellableImageResult {
         val volumes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.getExternalVolumeNames(context).toList().ifEmpty {
                 listOf(MediaStore.VOLUME_EXTERNAL)
@@ -5453,6 +5526,7 @@ private suspend fun loadMediaImageLibrary(context: Context): List<MediaImageItem
                 var volumeImageCount = 0
 
                 while (cursor.moveToNext() && volumeImageCount < MaxLibraryImages) {
+                    currentCoroutineContext().ensureActive()
                     val id = cursor.getLong(idColumn)
                     val name = cursor.getString(nameColumn).orEmpty().ifBlank { "Image $id" }
                     images += MediaImageItem(
@@ -5481,7 +5555,7 @@ private suspend fun loadFolderImageLibrary(
     context: Context,
     treeUri: Uri,
 ): List<MediaImageItem> = withContext(Dispatchers.IO) {
-    runCatching {
+    cancellableImageResult {
         val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
         val images = mutableListOf<MediaImageItem>()
 
@@ -5500,15 +5574,17 @@ private suspend fun loadFolderImageLibrary(
     }
 }
 
-private fun scanFolderImages(
+private suspend fun scanFolderImages(
     context: Context,
     treeUri: Uri,
     documentId: String,
     folderLabel: String,
     depth: Int,
     images: MutableList<MediaImageItem>,
+    visited: MutableSet<String> = mutableSetOf(),
 ) {
-    if (depth > MaxFolderScanDepth || images.size >= MaxLibraryImages) return
+    currentCoroutineContext().ensureActive()
+    if (depth > MaxFolderScanDepth || images.size >= MaxLibraryImages || visited.size >= 10_000 || !visited.add(documentId)) return
 
     val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
     val projection = arrayOf(
@@ -5530,7 +5606,8 @@ private fun scanFolderImages(
         val mimeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
         val modifiedColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
 
-        while (cursor.moveToNext() && images.size < MaxLibraryImages) {
+        while (cursor.moveToNext() && images.size < MaxLibraryImages && visited.size < 10_000) {
+            currentCoroutineContext().ensureActive()
             val childDocumentId = cursor.getStringOrNull(idColumn) ?: continue
             val name = cursor.getStringOrNull(nameColumn).orEmpty().ifBlank { "Image ${images.size + 1}" }
             val mimeType = cursor.getStringOrNull(mimeColumn).orEmpty()
@@ -5555,6 +5632,7 @@ private fun scanFolderImages(
                         folderLabel = name,
                         depth = depth + 1,
                         images = images,
+                        visited = visited,
                     )
                 }
             }
@@ -5629,20 +5707,20 @@ private suspend fun loadImageSizeLabel(
         var height = options.outHeight
         if (width <= 0 || height <= 0) return@runCatching null
 
-        val orientation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        val orientation = run {
             context.contentResolver.openInputStream(uri)?.use { stream ->
                 ExifInterface(stream).getAttributeInt(
                     ExifInterface.TAG_ORIENTATION,
                     ExifInterface.ORIENTATION_NORMAL,
                 )
             } ?: ExifInterface.ORIENTATION_NORMAL
-        } else {
-            ExifInterface.ORIENTATION_NORMAL
         }
 
         if (
             orientation == ExifInterface.ORIENTATION_ROTATE_90 ||
-            orientation == ExifInterface.ORIENTATION_ROTATE_270
+            orientation == ExifInterface.ORIENTATION_ROTATE_270 ||
+            orientation == ExifInterface.ORIENTATION_TRANSPOSE ||
+            orientation == ExifInterface.ORIENTATION_TRANSVERSE
         ) {
             val previousWidth = width
             width = height
@@ -5655,7 +5733,7 @@ private suspend fun loadImageSizeLabel(
 
 private fun Int.floorMod(other: Int): Int = ((this % other) + other) % other
 
-private fun Context.loadTransformState(): TransformState {
+internal fun Context.loadTransformState(): TransformState {
     val prefs = getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
     val legacyGuideInset = prefs.getSafeFloat(KeyGuideInset, 80f, 0f, MaxGuideInsetPx)
     return TransformState(
@@ -5772,7 +5850,7 @@ private fun Context.loadTransformState(): TransformState {
     )
 }
 
-private fun Context.saveTransformState(transform: TransformState) {
+internal fun Context.saveTransformState(transform: TransformState) {
     getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
         .edit()
         .putFloat(KeyScale, transform.scale)
@@ -6276,15 +6354,17 @@ private fun android.content.SharedPreferences.getSafeFloat(
     }
 }
 
-private suspend fun loadScaledBitmap(
+internal suspend fun loadScaledBitmap(
     context: Context,
     uri: Uri,
     targetWidthPx: Int,
     targetHeightPx: Int,
 ): Bitmap? = withContext(Dispatchers.IO) {
     runCatching {
-        val maxWidth = (targetWidthPx * 2).coerceAtMost(MaxDecodedImageDimensionPx)
-        val maxHeight = (targetHeightPx * 2).coerceAtMost(MaxDecodedImageDimensionPx)
+        val memory = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val dimensionLimit = if (memory.isLowRamDevice || memory.memoryClass <= 128) 1920 else MaxDecodedImageDimensionPx
+        val maxWidth = (targetWidthPx.toLong() * 2).coerceIn(1L, dimensionLimit.toLong()).toInt()
+        val maxHeight = (targetHeightPx.toLong() * 2).coerceIn(1L, dimensionLimit.toLong()).toInt()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val source = ImageDecoder.createSource(context.contentResolver, uri)
@@ -6328,12 +6408,10 @@ private suspend fun loadScaledBitmap(
     }.getOrNull()
 }
 
-private fun Bitmap.orientedByExif(
+internal fun Bitmap.orientedByExif(
     context: Context,
     uri: Uri,
 ): Bitmap {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return this
-
     val orientation = runCatching {
         context.contentResolver.openInputStream(uri)?.use { stream ->
             ExifInterface(stream).getAttributeInt(
@@ -6352,11 +6430,11 @@ private fun Bitmap.orientedByExif(
         ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
         ExifInterface.ORIENTATION_TRANSPOSE -> {
             matrix.postScale(-1f, 1f)
-            matrix.postRotate(90f)
+            matrix.postRotate(270f)
         }
         ExifInterface.ORIENTATION_TRANSVERSE -> {
             matrix.postScale(-1f, 1f)
-            matrix.postRotate(270f)
+            matrix.postRotate(90f)
         }
         else -> return this
     }
@@ -6376,8 +6454,8 @@ private fun Bitmap.recycleIfNeeded() {
     }
 }
 
-private suspend fun createLineArtBitmap(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
-    runCatching {
+internal suspend fun createLineArtBitmap(bitmap: Bitmap): Bitmap? = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val source = bitmap.scaledForLineArt()
         val width = source.width
         val height = source.height
@@ -6388,6 +6466,7 @@ private suspend fun createLineArtBitmap(bitmap: Bitmap): Bitmap? = withContext(D
         source.getPixels(pixels, 0, width, 0, 0, width, height)
 
         for (index in pixels.indices) {
+            if (index % 4096 == 0) currentCoroutineContext().ensureActive()
             val pixel = pixels[index]
             val red = pixel shr 16 and 0xFF
             val green = pixel shr 8 and 0xFF
@@ -6396,6 +6475,7 @@ private suspend fun createLineArtBitmap(bitmap: Bitmap): Bitmap? = withContext(D
         }
 
         for (y in 1 until height - 1) {
+            currentCoroutineContext().ensureActive()
             val row = y * width
             val previousRow = row - width
             val nextRow = row + width
@@ -6429,13 +6509,13 @@ private suspend fun createLineArtBitmap(bitmap: Bitmap): Bitmap? = withContext(D
     }.getOrNull()
 }
 
-private suspend fun createEdgeOutlineBitmap(
+internal suspend fun createEdgeOutlineBitmap(
     bitmap: Bitmap,
     thickness: Float,
     detail: Float,
     smoothing: Float,
-): Bitmap? = withContext(Dispatchers.Default) {
-    runCatching {
+): Bitmap? = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val source = bitmap.scaledForEdgeOutline()
         val width = source.width
         val height = source.height
@@ -6450,6 +6530,7 @@ private suspend fun createEdgeOutlineBitmap(
         source.getPixels(pixels, 0, width, 0, 0, width, height)
 
         for (index in pixels.indices) {
+            if (index % 4096 == 0) currentCoroutineContext().ensureActive()
             val pixel = pixels[index]
             val red = pixel shr 16 and 0xFF
             val green = pixel shr 8 and 0xFF
@@ -6462,6 +6543,7 @@ private suspend fun createEdgeOutlineBitmap(
         }
 
         for (y in 1 until height - 1) {
+            currentCoroutineContext().ensureActive()
             val row = y * width
             val previousRow = row - width
             val nextRow = row + width
@@ -6494,12 +6576,12 @@ private suspend fun createEdgeOutlineBitmap(
     }.getOrNull()
 }
 
-private suspend fun createMagicOutlineBitmap(
+internal suspend fun createMagicOutlineBitmap(
     bitmap: Bitmap,
     detail: Float,
     thickness: Float,
-): Bitmap? = withContext(Dispatchers.Default) {
-    runCatching {
+): Bitmap? = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val source = bitmap.scaledForMagicOutline()
         val width = source.width
         val height = source.height
@@ -6514,6 +6596,7 @@ private suspend fun createMagicOutlineBitmap(
         source.getPixels(pixels, 0, width, 0, 0, width, height)
 
         for (index in pixels.indices) {
+            if (index % 4096 == 0) currentCoroutineContext().ensureActive()
             val pixel = pixels[index]
             val red = pixel shr 16 and 0xFF
             val green = pixel shr 8 and 0xFF
@@ -6529,6 +6612,7 @@ private suspend fun createMagicOutlineBitmap(
         )
 
         for (y in 1 until height - 1) {
+            currentCoroutineContext().ensureActive()
             val row = y * width
             val previousRow = row - width
             val nextRow = row + width
@@ -6572,7 +6656,7 @@ private suspend fun createMagicOutlineBitmap(
     }.getOrNull()
 }
 
-private fun smoothGrayInPlace(
+private suspend fun smoothGrayInPlace(
     gray: IntArray,
     width: Int,
     height: Int,
@@ -6583,6 +6667,7 @@ private fun smoothGrayInPlace(
     repeat(passes) {
         System.arraycopy(gray, 0, temp, 0, gray.size)
         for (y in 1 until height - 1) {
+            currentCoroutineContext().ensureActive()
             val row = y * width
             val previousRow = row - width
             val nextRow = row + width
@@ -6634,8 +6719,8 @@ private fun writeEdgePixel(
     }
 }
 
-private suspend fun createClarityBitmap(bitmap: Bitmap): Bitmap? = withContext(Dispatchers.Default) {
-    runCatching {
+internal suspend fun createClarityBitmap(bitmap: Bitmap): Bitmap? = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val source = bitmap.scaledForClarity()
         val width = source.width
         val height = source.height
@@ -6645,6 +6730,7 @@ private suspend fun createClarityBitmap(bitmap: Bitmap): Bitmap? = withContext(D
         source.getPixels(pixels, 0, width, 0, 0, width, height)
 
         for (y in 1 until height - 1) {
+            currentCoroutineContext().ensureActive()
             val row = y * width
             val previousRow = row - width
             val nextRow = row + width
@@ -6698,12 +6784,12 @@ private suspend fun createClarityBitmap(bitmap: Bitmap): Bitmap? = withContext(D
     }.getOrNull()
 }
 
-private suspend fun createThresholdBitmap(
+internal suspend fun createThresholdBitmap(
     bitmap: Bitmap,
     threshold: Float,
     channelMixer: ChannelMixerMode,
-): Bitmap? = withContext(Dispatchers.Default) {
-    runCatching {
+): Bitmap? = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val source = bitmap.scaledForThreshold()
         val width = source.width
         val height = source.height
@@ -6717,6 +6803,7 @@ private suspend fun createThresholdBitmap(
         source.getPixels(pixels, 0, width, 0, 0, width, height)
 
         for (index in pixels.indices) {
+            if (index % 4096 == 0) currentCoroutineContext().ensureActive()
             val pixel = pixels[index]
             val red = pixel shr 16 and 0xFF
             val green = pixel shr 8 and 0xFF
@@ -6733,11 +6820,11 @@ private suspend fun createThresholdBitmap(
     }.getOrNull()
 }
 
-private suspend fun createPaintBitmap(
+internal suspend fun createPaintBitmap(
     bitmap: Bitmap,
     detail: Float,
-): Bitmap? = withContext(Dispatchers.Default) {
-    runCatching {
+): Bitmap? = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val safeDetail = detail.coerceIn(0f, 1f)
         val source = bitmap.scaledForPaint(safeDetail)
         val width = source.width
@@ -6752,6 +6839,7 @@ private suspend fun createPaintBitmap(
 
         var y = 0
         while (y < height) {
+            currentCoroutineContext().ensureActive()
             var x = 0
             val blockBottom = (y + brushSize).coerceAtMost(height)
 
@@ -6817,11 +6905,11 @@ private suspend fun createPaintBitmap(
     }.getOrNull()
 }
 
-private suspend fun createPosterizeBitmap(
+internal suspend fun createPosterizeBitmap(
     bitmap: Bitmap,
     strength: Float,
-): Bitmap? = withContext(Dispatchers.Default) {
-    runCatching {
+): Bitmap? = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val safeStrength = strength.coerceIn(0f, 1f)
         val source = bitmap.scaledForPosterize()
         val width = source.width
@@ -6833,6 +6921,7 @@ private suspend fun createPosterizeBitmap(
         source.getPixels(pixels, 0, width, 0, 0, width, height)
 
         for (index in pixels.indices) {
+            if (index % 4096 == 0) currentCoroutineContext().ensureActive()
             val pixel = pixels[index]
             val red = quantizeChannel(pixel shr 16 and 0xFF, levels)
             val green = quantizeChannel(pixel shr 8 and 0xFF, levels)
@@ -6848,11 +6937,11 @@ private suspend fun createPosterizeBitmap(
     }.getOrNull()
 }
 
-private suspend fun createVolumeBitmap(
+internal suspend fun createVolumeBitmap(
     bitmap: Bitmap,
     strength: Float,
-): Bitmap? = withContext(Dispatchers.Default) {
-    runCatching {
+): Bitmap? = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val safeStrength = strength.coerceIn(0f, 1f)
         val source = bitmap.scaledForVolume(safeStrength)
         val width = source.width
@@ -6890,7 +6979,7 @@ private suspend fun createVolumeBitmap(
     }.getOrNull()
 }
 
-private fun boxBlurHorizontal(
+private suspend fun boxBlurHorizontal(
     input: IntArray,
     width: Int,
     height: Int,
@@ -6900,6 +6989,7 @@ private fun boxBlurHorizontal(
     val window = radius * 2 + 1
 
     for (y in 0 until height) {
+        currentCoroutineContext().ensureActive()
         val row = y * width
         var alphaSum = 0
         var redSum = 0
@@ -6915,6 +7005,7 @@ private fun boxBlurHorizontal(
         }
 
         for (x in 0 until width) {
+            if (x % 64 == 0) currentCoroutineContext().ensureActive()
             output[row + x] = averageArgb(alphaSum, redSum, greenSum, blueSum, window)
 
             val removePixel = input[row + (x - radius).coerceIn(0, width - 1)]
@@ -6929,7 +7020,7 @@ private fun boxBlurHorizontal(
     return output
 }
 
-private fun boxBlurVertical(
+private suspend fun boxBlurVertical(
     input: IntArray,
     width: Int,
     height: Int,
@@ -6939,6 +7030,7 @@ private fun boxBlurVertical(
     val window = radius * 2 + 1
 
     for (x in 0 until width) {
+            if (x % 64 == 0) currentCoroutineContext().ensureActive()
         var alphaSum = 0
         var redSum = 0
         var greenSum = 0
@@ -6953,6 +7045,7 @@ private fun boxBlurVertical(
         }
 
         for (y in 0 until height) {
+        currentCoroutineContext().ensureActive()
             val index = y * width + x
             output[index] = averageArgb(alphaSum, redSum, greenSum, blueSum, window)
 
@@ -6980,11 +7073,11 @@ private fun averageArgb(
         ((greenSum / count).coerceIn(0, 255) shl 8) or
         (blueSum / count).coerceIn(0, 255)
 
-private suspend fun createNoiseReductionBitmap(
+internal suspend fun createNoiseReductionBitmap(
     bitmap: Bitmap,
     strength: Float,
-): Bitmap? = withContext(Dispatchers.Default) {
-    runCatching {
+): Bitmap? = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val safeStrength = strength.coerceIn(0f, 1f)
         val scale = (1f - safeStrength * 0.55f).coerceIn(0.35f, 1f)
         val sourceWidth = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
@@ -6998,12 +7091,12 @@ private suspend fun createNoiseReductionBitmap(
     }.getOrNull()
 }
 
-private suspend fun extractColorPalette(
+internal suspend fun extractColorPalette(
     bitmap: Bitmap,
     colorCount: Int,
     mode: ColorPaletteMode,
-): List<Int> = withContext(Dispatchers.Default) {
-    runCatching {
+): List<Int> = withContext(ImageFilterDispatcher) {
+    cancellableImageResult {
         val targetCount = colorCount.coerceIn(MinPaletteColors, MaxPaletteColors)
         val source = bitmap.scaledForPalette()
         val width = source.width
@@ -7293,21 +7386,16 @@ private fun copyBitmapEdges(
     }
 }
 
-private fun calculateSampleSize(
-    width: Int,
-    height: Int,
-    targetWidth: Int,
-    targetHeight: Int,
-): Int {
-    var sampleSize = 1
-    var sampledWidth = width
-    var sampledHeight = height
 
-    while (sampledWidth / 2 >= targetWidth && sampledHeight / 2 >= targetHeight) {
-        sampleSize *= 2
-        sampledWidth /= 2
-        sampledHeight /= 2
-    }
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+private val ImageFilterDispatcher = Dispatchers.Default.limitedParallelism(1)
 
-    return sampleSize.coerceAtLeast(1)
+private inline fun <T> cancellableImageResult(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: Exception) {
+    Result.failure(failure)
+} catch (failure: OutOfMemoryError) {
+    Result.failure(failure)
 }

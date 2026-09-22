@@ -10,6 +10,10 @@ An Android TV / Google TV app for artists who project reference images onto a ca
 
 [Download APK](https://github.com/yemelinart/ProjectorTrace/releases/latest) · [Русский](README.ru.md)
 
+## Development candidate
+
+The source now contains **8.5.1**, a stability/performance candidate. The public v8.5 APK remains the preserved original release. Read the [audit and tests](docs/AUDIT-2026-09-22.md), [Google Play checklist](docs/PLAY-READINESS.md), and [privacy policy](https://yemelinart.github.io/ProjectorTrace/privacy.html). This candidate is not yet a production Play release.
+
 ## Features
 
 - Open images from the gallery or a compatible Android file picker.
@@ -34,7 +38,7 @@ The v8.5 release APK is the preserved original **debug build**, not a Play Store
 1. Open **Image → Gallery** or **Browse Files** and select a reference image.
 2. Choose a tool from **Transform**, **Guides** or **Filter**.
 3. Use the D-pad to adjust it. OK confirms or cycles a tool's selected element, depending on the mode.
-4. Back/Menu opens or closes the controls; menu navigation uses Up/Down, Right to enter and Left to go back.
+4. In 8.5.1, Back closes the current controls and eventually exits to the TV launcher. Menu toggles controls; Right opens them from the canvas. Menu navigation uses Up/Down, Right to enter and Left to go back.
 5. Configure orientation and Blink in **Settings**. When Blink is enabled and the controls are closed, OK switches the selected view.
 
 ## Build from source
@@ -43,7 +47,9 @@ Open this repository folder in Android Studio. Use JDK 17 or a compatible Androi
 
 ```sh
 ./gradlew :app:assembleDebug
-./gradlew :app:lintDebug
+./gradlew :app:lintDebug :app:testDebugUnitTest
+./gradlew :app:connectedDebugAndroidTest # with a connected test device
+./gradlew :app:bundleRelease # unsigned until upload signing is configured
 ```
 
 On Windows, use `gradlew.bat`. The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.

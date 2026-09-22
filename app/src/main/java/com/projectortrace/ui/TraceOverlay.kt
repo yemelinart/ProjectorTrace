@@ -99,6 +99,7 @@ internal enum class TraceMenuPanel {
     Info,
     Settings,
     About,
+    Privacy,
 }
 
 internal enum class TraceMenuSize {
@@ -413,7 +414,7 @@ internal fun traceMenuEntries(
         TraceMenuEntry("Back", "BCK", action = TraceMenuAction.Back),
     )
     TraceMenuPanel.Info -> listOf(
-        TraceMenuEntry("Projector Trace", "APP", detail = "V8.5"),
+        TraceMenuEntry("Projector Trace", "APP", detail = "V${com.projectortrace.BuildConfig.VERSION_NAME}"),
         TraceMenuEntry("File", "IMG", detail = imageStatusLabel(hasImage = hasImage, imageLabel = imageLabel)),
         TraceMenuEntry("Image Size", "INF", detail = imageSizeLabel ?: if (hasImage) "Reading..." else "No image"),
         TraceMenuEntry("Scale", "ZOM", detail = "${transform.zoomPercent()}%"),
@@ -434,6 +435,7 @@ internal fun traceMenuEntries(
         TraceMenuEntry("Keep Screen Awake", "AWK", detail = if (keepScreenAwake) "On" else "Off", action = TraceMenuAction.ToggleKeepScreenAwake),
         TraceMenuEntry("Projector Mode", "ROT", detail = projectorOrientation.label(), action = TraceMenuAction.CycleProjectorOrientation),
         TraceMenuEntry("About", "INF", opensPanel = TraceMenuPanel.About),
+        TraceMenuEntry("Privacy", "INF", opensPanel = TraceMenuPanel.Privacy),
         TraceMenuEntry("Back", "BCK", action = TraceMenuAction.Back),
     )
     TraceMenuPanel.SettingsBlink -> listOf(
@@ -441,8 +443,20 @@ internal fun traceMenuEntries(
         TraceMenuEntry("Blink Mode", "OK", detail = projectionBlankMode.label(), action = TraceMenuAction.CycleProjectionBlankMode),
         TraceMenuEntry("Back", "BCK", action = TraceMenuAction.Back),
     )
+    TraceMenuPanel.Privacy -> listOf(
+        TraceMenuEntry("Privacy policy", "INF", detail = "Updated 22 Sep 2026"),
+        TraceMenuEntry("Developer", "DEV", detail = "Sergey Yemelin"),
+        TraceMenuEntry("Processing", "IMG", detail = "Images processed on this device"),
+        TraceMenuEntry("Collection", "INF", detail = "No uploads, tracking or analytics"),
+        TraceMenuEntry("Access", "IMG", detail = "Only files you allow Android to share"),
+        TraceMenuEntry("Storage", "INF", detail = "Settings and file references saved locally"),
+        TraceMenuEntry("Backup", "INF", detail = "Android may back up app settings"),
+        TraceMenuEntry("Delete", "INF", detail = "Clear app storage in Android settings"),
+        TraceMenuEntry("Contact", "INF", detail = "github.com/yemelinart/ProjectorTrace/issues"),
+        TraceMenuEntry("Back", "BCK", action = TraceMenuAction.Back),
+    )
     TraceMenuPanel.About -> listOf(
-        TraceMenuEntry("Projector Trace", "APP", detail = "V8.5"),
+        TraceMenuEntry("Projector Trace", "APP", detail = "V${com.projectortrace.BuildConfig.VERSION_NAME}"),
         TraceMenuEntry("Author", "DEV", detail = "S.Yemelin"),
         TraceMenuEntry("Built", "AI", detail = "VibeCoded in 1 night"),
         TraceMenuEntry("Back", "BCK", action = TraceMenuAction.Back),
@@ -521,7 +535,7 @@ internal fun TraceOverlay(
             )
             Text(
                 text = if (menuPanel == TraceMenuPanel.Main) {
-                    "Professional Art Projector Utility\nby S.Yemelin  |  V8.5"
+                    "Professional Art Projector Utility\nby S.Yemelin  |  V${com.projectortrace.BuildConfig.VERSION_NAME}"
                 } else {
                     "OK select  |  Left/Right adjust  |  Back"
                 },
@@ -830,6 +844,7 @@ private fun TraceMenuPanel.title(): String = when (this) {
     TraceMenuPanel.Settings -> "Settings"
     TraceMenuPanel.SettingsBlink -> "Blink"
     TraceMenuPanel.About -> "About"
+    TraceMenuPanel.Privacy -> "Privacy"
 }
 
 internal fun TraceMenuPanel.parentPanel(): TraceMenuPanel = when (this) {
@@ -859,7 +874,8 @@ internal fun TraceMenuPanel.parentPanel(): TraceMenuPanel = when (this) {
     TraceMenuPanel.FilterMagicOutline,
     TraceMenuPanel.FilterEdgeOutline -> TraceMenuPanel.Filter
     TraceMenuPanel.SettingsBlink,
-    TraceMenuPanel.About -> TraceMenuPanel.Settings
+    TraceMenuPanel.About,
+    TraceMenuPanel.Privacy -> TraceMenuPanel.Settings
     TraceMenuPanel.Main -> TraceMenuPanel.Main
     else -> TraceMenuPanel.Main
 }
@@ -898,7 +914,8 @@ private fun TraceMenuPanel.depth(): Int = when (this) {
     TraceMenuPanel.FilterMagicOutline,
     TraceMenuPanel.FilterEdgeOutline,
     TraceMenuPanel.SettingsBlink,
-    TraceMenuPanel.About -> 2
+    TraceMenuPanel.About,
+    TraceMenuPanel.Privacy -> 2
 }
 
 private val TraceModePickerDisplayModes = listOf(
@@ -1248,6 +1265,7 @@ internal fun TraceImageLibrary(
     val context = androidx.compose.ui.platform.LocalContext.current
     val currentItem = items.getOrNull(selectedIndex)
     val thumbnail by produceState<Bitmap?>(initialValue = null, key1 = currentItem?.uri) {
+        value = null
         value = currentItem?.let { loadLibraryThumbnail(context, it.uri) }
     }
     val panelWidth = if (isCompact) {
@@ -1373,18 +1391,7 @@ private fun thumbnailSampleSize(
     targetHeight: Int,
 ): Int {
     if (width <= 0 || height <= 0) return 1
-
-    var sampleSize = 1
-    var sampledWidth = width
-    var sampledHeight = height
-
-    while (sampledWidth / 2 >= targetWidth && sampledHeight / 2 >= targetHeight) {
-        sampleSize *= 2
-        sampledWidth /= 2
-        sampledHeight /= 2
-    }
-
-    return sampleSize.coerceAtLeast(1)
+    return com.projectortrace.imaging.calculateSampleSize(width, height, targetWidth, targetHeight)
 }
 
 @Composable
