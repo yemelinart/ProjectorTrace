@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.ProjectorTrace" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#E8EEF7</item>
+    </style>
+</resources>
