@@ -1,0 +1,234 @@
+[
+  {
+    "en": "Image & profiles",
+    "ru": "Изображения и профили",
+    "items": [
+      [
+        "Gallery and file browser",
+        "Галерея и файловый браузер"
+      ],
+      [
+        "Save, load and clear a setup profile",
+        "Сохранение, загрузка и удаление профиля"
+      ],
+      [
+        "Close or reset the current image",
+        "Закрытие и сброс изображения"
+      ],
+      [
+        "Lock image adjustments",
+        "Блокировка настроек изображения"
+      ]
+    ]
+  },
+  {
+    "en": "Position & perspective",
+    "ru": "Положение и перспектива",
+    "items": [
+      [
+        "Move and zoom",
+        "Перемещение и масштаб"
+      ],
+      [
+        "Rotate with adjustable rotation step",
+        "Поворот с настраиваемым шагом"
+      ],
+      [
+        "Fit image to the projection area",
+        "Вписывание изображения в область проекции"
+      ],
+      [
+        "Distort: adjust individual image corners",
+        "Перспектива: отдельная настройка углов"
+      ],
+      [
+        "Flip horizontally or vertically",
+        "Отражение по горизонтали и вертикали"
+      ],
+      [
+        "Reset transformations",
+        "Сброс трансформаций"
+      ]
+    ]
+  },
+  {
+    "en": "Composition & guides",
+    "ru": "Композиция и направляющие",
+    "items": [
+      [
+        "Grid with adjustable size and color",
+        "Сетка с настройкой размера и цвета"
+      ],
+      [
+        "Rulers and center cross",
+        "Линейки и перекрестие центра"
+      ],
+      [
+        "Canvas frame: presets, custom ratio and color",
+        "Рамка холста: форматы, пропорции и цвет"
+      ],
+      [
+        "Crop with individually adjustable edges",
+        "Обрезка с настройкой каждой стороны"
+      ],
+      [
+        "Guide shapes with color and rotation",
+        "Фигуры с настройкой цвета и поворота"
+      ],
+      [
+        "Corner guides: position and color",
+        "Угловые направляющие: положение и цвет"
+      ],
+      [
+        "Reset guides or crop independently",
+        "Отдельный сброс направляющих и обрезки"
+      ]
+    ]
+  },
+  {
+    "en": "Color palette",
+    "ru": "Цветовая палитра",
+    "items": [
+      [
+        "Extract a palette from the reference",
+        "Палитра по цветам референса"
+      ],
+      [
+        "Adjust color count and palette mode",
+        "Настройка числа цветов и режима"
+      ],
+      [
+        "Move and resize the palette",
+        "Перемещение и масштаб палитры"
+      ],
+      [
+        "Show or hide the palette",
+        "Включение и скрытие палитры"
+      ]
+    ]
+  },
+  {
+    "en": "Image processing",
+    "ru": "Обработка изображения",
+    "items": [
+      [
+        "Paint with adjustable detail",
+        "Paint: упрощение с настройкой деталей"
+      ],
+      [
+        "Magic Outline: detail and line weight",
+        "Magic Outline: детализация и толщина линий"
+      ],
+      [
+        "Threshold with adjustable level",
+        "Threshold: порог чёрного и белого"
+      ],
+      [
+        "Channel Mixer",
+        "Микшер цветовых каналов"
+      ],
+      [
+        "Posterize with adjustable level",
+        "Постеризация с настройкой уровня"
+      ],
+      [
+        "Opacity and blending mode",
+        "Прозрачность и режим наложения"
+      ],
+      [
+        "Brightness and contrast",
+        "Яркость и контраст"
+      ],
+      [
+        "Edge / Outline: strength, thickness, detail, smoothing",
+        "Edge / Outline: сила, толщина, детали, сглаживание"
+      ],
+      [
+        "Sharpness and noise reduction",
+        "Резкость и подавление шума"
+      ],
+      [
+        "Lines with adjustable strength",
+        "Линии с настройкой интенсивности"
+      ],
+      [
+        "Invert and adjustable blur",
+        "Инверсия и настраиваемое размытие"
+      ],
+      [
+        "Reset all filters",
+        "Сброс всех фильтров"
+      ]
+    ]
+  },
+  {
+    "en": "Blink & compare",
+    "ru": "Blink и сравнение",
+    "items": [
+      [
+        "Image / Black",
+        "Изображение / чёрный экран"
+      ],
+      [
+        "Image / White",
+        "Изображение / белый экран"
+      ],
+      [
+        "Compare filtered, original, outline and black-and-white views",
+        "Сравнение обработки, оригинала, контуров и чёрно-белого вида"
+      ],
+      [
+        "Switch with OK when menus and tools are closed",
+        "Переключение кнопкой OK при закрытых меню и инструментах"
+      ]
+    ]
+  },
+  {
+    "en": "Projector & interface",
+    "ru": "Проектор и интерфейс",
+    "items": [
+      [
+        "Projector orientation modes",
+        "Режимы ориентации проектора"
+      ],
+      [
+        "Menu size and screen position",
+        "Размер и положение меню"
+      ],
+      [
+        "Menu auto-hide or always visible",
+        "Автоскрытие или постоянное отображение меню"
+      ],
+      [
+        "Keep screen awake",
+        "Поддержание активного экрана"
+      ],
+      [
+        "D-pad, OK and Back/Menu control",
+        "Управление D-pad, OK и Back/Menu"
+      ]
+    ]
+  },
+  {
+    "en": "At-a-glance information",
+    "ru": "Информация о работе",
+    "items": [
+      [
+        "File name and image dimensions",
+        "Имя файла и размер изображения"
+      ],
+      [
+        "Current scale and active filters",
+        "Масштаб и активные фильтры"
+      ],
+      [
+        "Current mode and lock status",
+        "Текущий режим и статус блокировки"
+      ],
+      [
+        "App version and author information",
+        "Версия приложения и информация об авторе"
+      ]
+    ]
+  }
+]

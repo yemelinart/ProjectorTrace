@@ -1,5 +1,9 @@
 # Projector Trace
 
+[![Projector Trace presentation](site/assets/social-cover.png)](https://yemelinart.github.io/ProjectorTrace/)
+
+[Explore the visual website](https://yemelinart.github.io/ProjectorTrace/) · [Presentation PDF](https://yemelinart.github.io/ProjectorTrace/Projector-Trace-Presentation.pdf)
+
 An Android TV / Google TV app for artists who project reference images onto a canvas. Position, scale, rotate and adjust an image using the projector's remote — no touchscreen required.
 
 **By S. Yemelin · Version 8.5 · Kotlin + Jetpack Compose**

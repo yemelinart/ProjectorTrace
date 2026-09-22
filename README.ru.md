@@ -1,5 +1,9 @@
 # Projector Trace
 
+[![Projector Trace presentation](site/assets/social-cover.png)](https://yemelinart.github.io/ProjectorTrace/)
+
+[Сайт приложения](https://yemelinart.github.io/ProjectorTrace/) · [Презентация PDF](https://yemelinart.github.io/ProjectorTrace/Projector-Trace-Presentation.pdf)
+
 Приложение для Android TV / Google TV проекторов: выводит референс на холст и позволяет настраивать его обычным пультом.
 
 **Автор: S. Yemelin · Версия 8.5 · Kotlin + Jetpack Compose**
