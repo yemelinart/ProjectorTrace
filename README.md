@@ -6,13 +6,15 @@
 
 An Android TV / Google TV app for artists who project reference images onto a canvas. Position, scale, rotate and adjust an image using the projector's remote — no touchscreen required.
 
-**By S. Yemelin · Version 8.5 · Kotlin + Jetpack Compose**
+**By S. Yemelin · 0.9 RC1 — candidate for Stable 0.9 · Kotlin + Jetpack Compose**
 
-[Download APK](https://github.com/yemelinart/ProjectorTrace/releases/latest) · [Русский](README.ru.md)
+[Download test APK](https://github.com/yemelinart/ProjectorTrace/releases/tag/v0.9.0-rc.1) · [Русский](README.ru.md)
 
-## Development candidate
+## Toward Stable 0.9
 
-The source now contains **8.5.1**, a stability/performance candidate. The public v8.5 APK remains the preserved original release. Read the [audit and tests](docs/AUDIT-2026-09-22.md), [Google Play checklist](docs/PLAY-READINESS.md), and [privacy policy](https://yemelinart.github.io/ProjectorTrace/privacy.html). This candidate is not yet a production Play release.
+The current candidate is **0.9.0-rc.1**, packaging the audited 8.5.1 improvements. It is available for testing and is not yet declared stable or approved for Google Play. Development labels 8.x are being replaced by public 0.x versioning; the Android update code increases to 900. The original v8.5 release remains archived.
+
+[Visual release journal](https://yemelinart.github.io/ProjectorTrace/releases.html) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md) · [Audit and tests](docs/AUDIT-2026-09-22.md) · [Play checklist](docs/PLAY-READINESS.md)
 
 ## Features
 
@@ -31,14 +33,14 @@ Download `ProjectorTrace-V8.5.apk` from Releases and transfer it to your Android
 
 Android 6.0 (API 23) or later is required. The app is designed for a D-pad remote and the Android TV environment. File browsing depends on the file picker available on your device.
 
-The v8.5 release APK is the preserved original **debug build**, not a Play Store production release. A locally rebuilt APK may use a different signing key and may not install over it. No signing keys are included in this repository.
+The RC1 APK contains optimized release code signed with a **test certificate**. The accompanying AAB is **unsigned**. These are not production Play artifacts. The original v8.5 APK is preserved in its own release. Updating an installed APK requires the same signing certificate; if Android rejects the update, do not uninstall an existing working version without preserving your setup. No signing keys are included in this repository.
 
 ## Basic use
 
 1. Open **Image → Gallery** or **Browse Files** and select a reference image.
 2. Choose a tool from **Transform**, **Guides** or **Filter**.
 3. Use the D-pad to adjust it. OK confirms or cycles a tool's selected element, depending on the mode.
-4. In 8.5.1, Back closes the current controls and eventually exits to the TV launcher. Menu toggles controls; Right opens them from the canvas. Menu navigation uses Up/Down, Right to enter and Left to go back.
+4. Back closes the current controls and eventually exits to the TV launcher. Menu toggles controls; Right opens them from the canvas. Menu navigation uses Up/Down, Right to enter and Left to go back.
 5. Configure orientation and Blink in **Settings**. When Blink is enabled and the controls are closed, OK switches the selected view.
 
 ## Build from source

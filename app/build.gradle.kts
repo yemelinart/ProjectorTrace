@@ -12,8 +12,8 @@ android {
         applicationId = "com.projectortrace"
         minSdk = 23
         targetSdk = 35
-        versionCode = 851
-        versionName = "8.5.1"
+        versionCode = 900
+        versionName = "0.9.0-rc.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

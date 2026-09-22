@@ -1,6 +1,6 @@
-# Google Play release checklist — 8.5.1 candidate
+# Google Play release checklist — 0.9 RC1
 
-This is a hardening candidate, not an approved Google Play release. Review date: 2026-09-22.
+This is the candidate for Stable 0.9, incorporating the 8.5.1 hardening work, not an approved Google Play release. Review date: 2026-09-22.
 
 ## Technical scope
 
@@ -15,7 +15,7 @@ Release builds enable R8 code optimization and resource shrinking. `./gradlew bu
 - [ ] Choose/confirm the Play Console developer account, identity verification, public support email and developer details.
 - [ ] Create and securely back up the upload key; enable Play App Signing; sign the candidate AAB. Keep all keys and passwords outside the repository.
 - [ ] Resolve the photo permissions declaration. The TV library currently requests READ_MEDIA_IMAGES to browse local/USB-indexed images when no usable system picker exists. Document why frequent browsing is core, demonstrate system-picker limitations on supported TVs, and obtain approval. If this does not qualify, implement a picker-only distribution and validate it on real TVs before removing broad permissions. Do not silently remove the library from existing projector users.
-- [ ] Confirm the privacy policy against the signed artifact, publish its public URL and provide it in Play Console. The in-app policy is in Settings → Privacy. Verify public support contact; GitHub issues are currently offered.
+- [ ] Confirm the published [privacy policy](https://yemelinart.github.io/ProjectorTrace/privacy.html) against the final signed artifact and provide its URL in Play Console. The in-app policy is in Settings → Privacy. Verify public support contact; GitHub issues are currently offered.
 - [ ] Complete Data safety (currently no developer collection/sharing), content rating, target audience, ads declaration and app-access declaration. These are owner attestations, not automatically submitted by this repository.
 - [ ] Test the optimized signed build with physical projectors, USB storage, several file-provider apps, permission denial/revocation, sleep/wake and Android 6/8/11/13/14/16 where supported. Exercise all filters with low RAM and large files for at least a sustained session.
 - [ ] Check full five-way D-pad navigation, Back to launcher, focus restoration after file selection, 720p/1080p/4K readability and overscan. Confirm Keep Screen Awake use complies with TV ambient-mode review requirements for this projection workflow.
