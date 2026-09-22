@@ -25,3 +25,9 @@ The PDF's Blink page uses simple screen diagrams to explain the modes. These dia
 ## Validation
 
 The website was checked at desktop, tablet and mobile widths, in both languages. Screenshot switching, enlarged-image dialog, Escape to close and the comparison slider were exercised. PDF pages were rendered and visually inspected. Device compatibility and physical projection quality are not claimed by these presentation checks.
+
+## Author story and positioning
+
+The creator statement on the website is based on Sergey Yemelin's own account: he built the app through vibe coding in Codex without knowing the programming language and wants to share a useful, working tool freely.
+
+The Google Play positioning statement is deliberately limited to not finding a direct equivalent in a targeted search on 2026-09-22. It does not claim that no competing product exists. Searches included Android TV, tracing, projector, remote/D-pad and perspective correction. Related phone-based AR tracing apps exist, for example [DrawToo](https://play.google.com/store/apps/details?id=com.arthub.drawtoo); [Mini Projector App](https://play.google.com/store/apps/details?id=com.bumonther.miniprojectorapp) describes projector setup utilities. Neither inspected listing established a direct equivalent to this app's combined Android TV creative workflow.
